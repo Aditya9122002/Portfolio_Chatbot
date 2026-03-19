@@ -1,0 +1,14 @@
+# Personal info — NEVER upload to GitHub
+.env
+
+# Python cache files — not needed on GitHub
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environment folder
+venv/
+env/
+
+# VS Code settings
+.vscode/
