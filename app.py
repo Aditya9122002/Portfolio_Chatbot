@@ -253,7 +253,7 @@ if "messages" not in st.session_state:
     ]
     # Get opening greeting from AI
     opening = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",   # Groq's free llama3 model
+        model="gemma2-9b-it",   # Groq's free llama3 model
         messages=st.session_state.messages + [
             {"role": "user", "content": "Introduce yourself in 2 friendly lines"}
         ]
@@ -284,7 +284,7 @@ if "quick_question" in st.session_state:
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
             response = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="gemma2-9b-it",
                 messages=st.session_state.messages
             )
             reply = response.choices[0].message.content
@@ -307,7 +307,7 @@ if user_input:
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
             response = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",   # free Groq model
+                model="gemma2-9b-it",   # free Groq model
                 messages=st.session_state.messages
             )
             reply = response.choices[0].message.content
