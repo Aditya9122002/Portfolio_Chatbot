@@ -8,6 +8,7 @@
 import os
 import glob
 import html
+import requests
 import streamlit as st
 from dotenv import load_dotenv
 from github import Github
@@ -15,7 +16,7 @@ from github import Github
 from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_mistralai import MistralAIEmbeddings, ChatMistralAI
-from langchain_community.vectorstores import Chroma
+from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
@@ -127,8 +128,8 @@ def build_knowledge_base():
         all_docs.extend(docs)
 
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,   # bigger chunks = more context per chunk
-        chunk_overlap=100  # more overlap = less context lost at boundaries
+        chunk_size=1000,
+        chunk_overlap=100
     )
     chunks = splitter.split_documents(all_docs)
 
@@ -137,13 +138,11 @@ def build_knowledge_base():
         model="mistral-embed"
     )
 
-    vectorstore = Chroma.from_documents(
+    vectorstore = FAISS.from_documents(
         documents=chunks,
-        embedding=embeddings,
-        persist_directory="./portfolio_db"
+        embedding=embeddings
     )
 
-    # k=10 so all 5 projects + other info can be retrieved
     return vectorstore.as_retriever(search_kwargs={"k": 10})
 
 
@@ -156,12 +155,10 @@ def load_rules():
 
 
 # ── TELEGRAM NOTIFICATION ─────────────────────────────────────
-import requests
-
 def send_telegram_alert(user_message):
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    
+
     text = f"""
 🚨 *HIRING ALERT — Portfolio Chatbot*
 
@@ -172,7 +169,7 @@ _{user_message}_
 
 ⏰ Check your portfolio chatbot now and follow up!
     """
-    
+
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     requests.post(url, json={
         "chat_id": chat_id,
@@ -181,10 +178,10 @@ _{user_message}_
     })
 
 
-# Only show these repos
+# ── GITHUB INTEGRATION ────────────────────────────────────────
 SHOW_REPOS = [
     "Portfolio_Chatbot",
-    "PDF_Chatbot", 
+    "PDF_Chatbot",
     "Research_Agent",
     "Ai_Projects"
 ]
@@ -194,10 +191,10 @@ def fetch_github_projects():
         g = Github(os.getenv("GITHUB_TOKEN"))
         user = g.get_user(os.getenv("GITHUB_USERNAME"))
         repos = user.get_repos()
-        
+
         projects = []
         for repo in repos:
-            if repo.name in SHOW_REPOS:  # only whitelisted repos
+            if repo.name in SHOW_REPOS:
                 projects.append({
                     "name": repo.name,
                     "description": repo.description or "No description",
@@ -209,6 +206,7 @@ def fetch_github_projects():
         return projects
     except Exception as e:
         return []
+
 
 # ── HIRING INTENT DETECTION ───────────────────────────────────
 HIRING_KEYWORDS = [
@@ -232,27 +230,16 @@ SHORT_REPLY_STARTERS = [
 
 def is_followup(text):
     text = text.strip().lower()
-    # Only treat as follow-up if it STARTS WITH a trigger word
-    # Remove the is_short check — it causes topic names like 
-    # "urban library" to be treated as follow-ups
-    starts_with_trigger = any(text.startswith(t) for t in SHORT_REPLY_STARTERS)
-    return starts_with_trigger
+    return any(text.startswith(t) for t in SHORT_REPLY_STARTERS)
 
 def get_smart_query(user_input):
-    """
-    If user sends a follow-up like 'yes', 'yes show me all',
-    reuse the last real question for retrieval.
-    This guarantees the right chunks are fetched every time.
-    """
     if is_followup(user_input):
         last_q = st.session_state.get("last_question", "")
         if last_q:
             return last_q
     return user_input
 
-
 def save_last_question(user_input):
-    """Save question only if it's a real question, not a follow-up."""
     if not is_followup(user_input):
         st.session_state.last_question = user_input
 
@@ -311,9 +298,6 @@ Answer:""")
             for doc in docs
         ])
 
-    # Chain takes a dict:
-    # smart_query → retriever (finds right chunks)
-    # question    → prompt (shows what user actually asked)
     chain = (
         {
             "context": (lambda x: x["smart_query"]) | retriever | format_docs,
@@ -337,7 +321,7 @@ if "history_text" not in st.session_state:
 if "hiring_detected" not in st.session_state:
     st.session_state.hiring_detected = False
 if "last_question" not in st.session_state:
-    st.session_state.last_question = ""  # stores last real question for memory
+    st.session_state.last_question = ""
 
 # ── BUILD CHAIN ───────────────────────────────────────────────
 with st.spinner("Loading knowledge base..."):
@@ -361,6 +345,7 @@ if "quick_q" in st.session_state:
         with st.spinner("Searching knowledge base..."):
             if detect_hiring_intent(user_input):
                 st.session_state.hiring_detected = True
+                send_telegram_alert(user_input)
 
             save_last_question(user_input)
             smart_query = get_smart_query(user_input)
@@ -386,8 +371,8 @@ if user_input:
     with st.chat_message("assistant"):
         with st.spinner("Searching knowledge base..."):
             if detect_hiring_intent(user_input):
-             st.session_state.hiring_detected = True
-             send_telegram_alert(user_input)
+                st.session_state.hiring_detected = True
+                send_telegram_alert(user_input)
 
             save_last_question(user_input)
             smart_query = get_smart_query(user_input)
@@ -422,7 +407,6 @@ if st.session_state.hiring_detected:
             height: 12px;
             border-radius: 50%;
             background-color: #22c55e;
-            box-shadow: 0 0 0 rgba(34, 197, 94, 0.8);
             animation: hiringPulse 1.4s infinite;
             flex-shrink: 0;
         }
@@ -430,22 +414,12 @@ if st.session_state.hiring_detected:
             color: #ecfdf5;
             font-size: 16px;
             font-weight: 700;
-            letter-spacing: 0.2px;
             margin: 0;
         }
         @keyframes hiringPulse {
-            0% {
-                transform: scale(0.9);
-                box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.75);
-            }
-            70% {
-                transform: scale(1.08);
-                box-shadow: 0 0 0 12px rgba(34, 197, 94, 0);
-            }
-            100% {
-                transform: scale(0.9);
-                box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
-            }
+            0% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.75); }
+            70% { transform: scale(1.08); box-shadow: 0 0 0 12px rgba(34, 197, 94, 0); }
+            100% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
         }
     </style>
     <div class="hiring-alert-banner">
@@ -469,58 +443,21 @@ with st.sidebar:
                 margin-bottom: 10px;
                 box-shadow: 0 6px 18px rgba(2, 6, 23, 0.35);
             }
-            .repo-title {
-                margin: 0 0 6px 0;
-                font-size: 15px;
-                line-height: 1.2;
-                font-weight: 700;
-            }
-            .repo-title a {
-                color: #e2e8f0;
-                text-decoration: none;
-            }
-            .repo-title a:hover {
-                color: #22d3ee;
-                text-decoration: underline;
-            }
-            .repo-description {
-                margin: 0 0 10px 0;
-                color: #94a3b8;
-                font-size: 12px;
-                line-height: 1.4;
-            }
-            .repo-meta {
-                display: flex;
-                align-items: center;
-                flex-wrap: wrap;
-                gap: 8px;
-                color: #cbd5e1;
-                font-size: 12px;
-            }
-            .repo-pill {
-                display: inline-flex;
-                align-items: center;
-                padding: 3px 9px;
-                border-radius: 999px;
-                font-size: 11px;
-                font-weight: 600;
-                color: #e2e8f0;
-                border: 1px solid rgba(255, 255, 255, 0.2);
-            }
+            .repo-title { margin: 0 0 6px 0; font-size: 15px; font-weight: 700; }
+            .repo-title a { color: #e2e8f0; text-decoration: none; }
+            .repo-title a:hover { color: #22d3ee; text-decoration: underline; }
+            .repo-description { margin: 0 0 10px 0; color: #94a3b8; font-size: 12px; }
+            .repo-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 12px; }
+            .repo-pill { padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; color: #e2e8f0; border: 1px solid rgba(255,255,255,0.2); }
         </style>
         """, unsafe_allow_html=True)
 
         language_colors = {
-            "python": "#3776ab",
-            "javascript": "#f1e05a",
-            "typescript": "#3178c6",
-            "java": "#b07219",
-            "c++": "#f34b7d",
-            "c": "#555555",
-            "html": "#e34c26",
-            "css": "#563d7c",
-            "go": "#00add8",
-            "shell": "#89e051",
+            "python": "#3776ab", "javascript": "#f1e05a",
+            "typescript": "#3178c6", "java": "#b07219",
+            "c++": "#f34b7d", "c": "#555555",
+            "html": "#e34c26", "css": "#563d7c",
+            "go": "#00add8", "shell": "#89e051",
         }
 
         for p in projects:
@@ -546,7 +483,7 @@ with st.sidebar:
                     <span>Updated: {safe_updated}</span>
                 </div>
             </div>
-            """,unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
     else:
         st.info("Could not fetch GitHub projects")
 
