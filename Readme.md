@@ -3,7 +3,7 @@
 An intelligent portfolio chatbot that answers questions about my background,
 skills, projects, and experience using RAG (Retrieval Augmented Generation).
 
-🔗 **Live Demo:** [Click here to chat](your-streamlit-url-here)
+🔗 **Live Demo:** [Click here to chat](https://portfoliochatbot-84ja9qnxuwdshyp2aktdtt.streamlit.app/)
 
 ---
 
