@@ -1,317 +1,559 @@
 # ============================================================
-#  PORTFOLIO CHATBOT — Streamlit Web App
-#  Uses Groq API (free, fast, cloud-based)
-#  Anyone can open this on mobile or laptop via a link!
+#  PORTFOLIO CHATBOT — Professional Upgrade v2
+#  Uses RAG on markdown data files instead of .env
+#  Concepts: RAG on personal data, behavioral rules,
+#            structured knowledge base, lead detection
 # ============================================================
 
 import os
+import glob
+import html
 import streamlit as st
-from groq import Groq
 from dotenv import load_dotenv
+from github import Github
 
-# Load .env file
+from langchain_community.document_loaders import TextLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_mistralai import MistralAIEmbeddings, ChatMistralAI
+from langchain_community.vectorstores import Chroma
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+
 load_dotenv()
 
-# ── READ PERSONAL INFO FROM .env ──────────────────────────────
-name         = os.getenv('NAME', 'Your Name')
-role         = os.getenv('CURRENT_ROLE', 'Developer')
-experience   = os.getenv('EXPERIENCE', '1 year')
-location     = os.getenv('LOCATION', 'India')
-open_to      = os.getenv('OPEN_TO', 'AI roles')
-availability = os.getenv('AVAILABILITY', 'Available')
-work_type    = os.getenv('WORK_TYPE', 'Full-time')
-skill_ai       = os.getenv('SKILL_AI', '')
-skill_python   = os.getenv('SKILL_PYTHON', '')
-skill_tools    = os.getenv('SKILL_TOOLS', '')
-skill_db       = os.getenv('SKILL_DATABASES', '')
-skill_learning = os.getenv('SKILL_LEARNING', '')
-skill_soft     = os.getenv('SKILL_SOFT', '')
-company      = os.getenv('COMPANY', '')
-company_type = os.getenv('COMPANY_TYPE', '')
-work_desc    = os.getenv('CURRENT_WORK_DESC', '')
-achievement1 = os.getenv('ACHIEVEMENT1', '')
-achievement2 = os.getenv('ACHIEVEMENT2', '')
-ai_since     = os.getenv('AI_LEARNING_SINCE', '')
-p1_name   = os.getenv('PROJECT1_NAME', '')
-p1_desc   = os.getenv('PROJECT1_DESC', '')
-p1_tech   = os.getenv('PROJECT1_TECH', '')
-p1_github = os.getenv('PROJECT1_GITHUB', '')
-p2_name   = os.getenv('PROJECT2_NAME', '')
-p2_desc   = os.getenv('PROJECT2_DESC', '')
-p2_tech   = os.getenv('PROJECT2_TECH', '')
-p2_github = os.getenv('PROJECT2_GITHUB', '')
-p3_name      = os.getenv('PROJECT3_NAME', '')
-p3_desc      = os.getenv('PROJECT3_DESC', '')
-p3_tech      = os.getenv('PROJECT3_TECH', '')
-p3_github    = os.getenv('PROJECT3_GITHUB', '')
-p3_highlight = os.getenv('PROJECT3_HIGHLIGHT', '')
-p4_name      = os.getenv('PROJECT4_NAME', '')
-p4_desc      = os.getenv('PROJECT4_DESC', '')
-p4_tech      = os.getenv('PROJECT4_TECH', '')
-p4_github    = os.getenv('PROJECT4_GITHUB', '')
-p4_highlight = os.getenv('PROJECT4_HIGHLIGHT', '')
-paper1  = os.getenv('PAPER1', '')
-paper2  = os.getenv('PAPER2', '')
-degree  = os.getenv('DEGREE', '')
-college = os.getenv('COLLEGE', '')
-grad_yr = os.getenv('GRAD_YEAR', '')
-cert1   = os.getenv('CERT1', '')
-cert2   = os.getenv('CERT2', '')
-cert3   = os.getenv('CERT3', '')
-strength1  = os.getenv('STRENGTH1', '')
-strength2  = os.getenv('STRENGTH2', '')
-strength3  = os.getenv('STRENGTH3', '')
-passion    = os.getenv('PASSION', '')
-work_style = os.getenv('WORK_STYLE', '')
-target_role    = os.getenv('TARGET_ROLE', '')
-target_company = os.getenv('TARGET_COMPANY', '')
-salary         = os.getenv('SALARY', 'Open to discussion')
-notice         = os.getenv('NOTICE_PERIOD', '')
-remote         = os.getenv('REMOTE', '')
-email     = os.getenv('EMAIL', '')
-linkedin  = os.getenv('LINKEDIN', '')
-github    = os.getenv('GITHUB', '')
-
-# ── SYSTEM PROMPT ─────────────────────────────────────────────
-SYSTEM_PROMPT = f"""
-You are {name}'s personal portfolio assistant.
-Help recruiters, clients, and developers learn about {name}
-in a friendly and professional way.
-
-== ABOUT ==
-Name         : {name}
-Role         : {role} | Experience: {experience}
-Location     : {location}
-Availability : {availability}
-Work type    : {work_type}
-Open to      : {open_to}
-
-== TECHNICAL SKILLS ==
-AI & LLM      : {skill_ai}
-Python & ML   : {skill_python}
-Tools         : {skill_tools}
-Databases     : {skill_db}
-Learning now  : {skill_learning}
-Soft skills   : {skill_soft}
-
-== WORK EXPERIENCE ==
-Company    : {company} ({company_type})
-Role       : {role} | {experience}
-Daily work : {work_desc}
-Key win #1 : {achievement1}
-Key win #2 : {achievement2}
-AI journey : Started {ai_since}
-
-== PROJECTS ==
-1. {p3_name}
-   What: {p3_desc}
-   Tech: {p3_tech}
-   GitHub: {p3_github}
-   Note: {p3_highlight}
-
-2. {p4_name}
-   What: {p4_desc}
-   Tech: {p4_tech}
-   GitHub: {p4_github}
-   Note: {p4_highlight}
-
-3. {p1_name}
-   What: {p1_desc}
-   Tech: {p1_tech}
-   GitHub: {p1_github}
-
-4. {p2_name}
-   What: {p2_desc}
-   Tech: {p2_tech}
-   GitHub: {p2_github}
-
-== RESEARCH PAPERS (Published) ==
-- {paper1}
-- {paper2}
-
-== EDUCATION ==
-Degree  : {degree}
-College : {college}
-Year    : {grad_yr}
-
-== CERTIFICATIONS ==
-- {cert1}
-- {cert2}
-- {cert3}
-
-== STRENGTHS ==
-- {strength1}
-- {strength2}
-- {strength3}
-Work style : {work_style}
-Passion    : {passion}
-
-== JOB PREFERENCES ==
-Target roles     : {target_role}
-Target companies : {target_company}
-Salary           : {salary}
-Notice period    : {notice}
-Remote           : {remote}
-
-== CONTACT ==
-Email    : {email}
-LinkedIn : {linkedin}
-GitHub   : {github}
-
-== HOW TO BEHAVE ==
-- Be friendly, warm and professional
-- Keep answers to 3-5 lines
-- Mention research papers when relevant — they are impressive
-- For salary say: "{salary}"
-- If asked something not listed say: "I don't have that detail — reach {name} at {email}"
-- Never make up information not listed above
-- End every response with an offer to help further
-"""
-
-# ── GROQ CLIENT ───────────────────────────────────────────────
-# Groq is like Ollama but runs in the cloud — free and fast
-# This is what makes the app work on mobile and for everyone
-client = Groq(api_key=os.getenv('GROQ_API_KEY'))
-
-# ── STREAMLIT PAGE CONFIG ─────────────────────────────────────
-# This must be the FIRST streamlit command — sets page title and icon
+# ── PAGE CONFIG ───────────────────────────────────────────────
 st.set_page_config(
-    page_title=f"{name} — Portfolio Assistant",
+    page_title="Aditya Agarwal — AI Assistant",
     page_icon="🤖",
     layout="centered"
 )
 
-# ── CUSTOM CSS — makes it look clean and professional ─────────
+# ── CUSTOM CSS ────────────────────────────────────────────────
 st.markdown("""
 <style>
-    .main { max-width: 750px; }
-    .stChatMessage { border-radius: 12px; }
     .header-box {
-        background: linear-gradient(135deg, #6C63FF, #4FC3F7);
-        padding: 24px;
+        background: linear-gradient(135deg, #1a1a2e, #16213e);
+        padding: 28px;
         border-radius: 16px;
         margin-bottom: 20px;
         text-align: center;
         color: white;
+        border: 1px solid #0f3460;
     }
-    .quick-btn {
-        background: #f0f2f6;
-        border: 1px solid #e0e0e0;
+    .header-name {
+        font-size: 26px;
+        font-weight: 700;
+        margin: 0;
+        color: #00d4aa;
+    }
+    .header-role {
+        font-size: 14px;
+        opacity: 0.8;
+        margin: 6px 0 0;
+    }
+    .header-tags {
+        margin-top: 12px;
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+    .tag {
+        background: rgba(0,212,170,0.15);
+        color: #00d4aa;
+        border: 1px solid rgba(0,212,170,0.3);
+        padding: 3px 10px;
         border-radius: 20px;
-        padding: 6px 14px;
-        font-size: 13px;
-        cursor: pointer;
+        font-size: 11px;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # ── HEADER ────────────────────────────────────────────────────
-st.markdown(f"""
+st.markdown("""
 <div class="header-box">
-    <h2 style="margin:0; font-size:24px;">👋 Hi, I'm {name}'s AI Assistant</h2>
-    <p style="margin:8px 0 0; opacity:0.9; font-size:14px;">
-        Ask me anything about {name}'s skills, projects, experience, or how to contact him
-    </p>
+    <p class="header-name">Aditya Agarwal</p>
+    <p class="header-role">Associate Engineer → AI Engineer | Pune, India</p>
+    <div class="header-tags">
+        <span class="tag">RAG</span>
+        <span class="tag">LangChain</span>
+        <span class="tag">AI Agents</span>
+        <span class="tag">Embedded Systems</span>
+        <span class="tag">2x Research Papers</span>
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
-# ── QUICK QUESTION BUTTONS ────────────────────────────────────
-# These help mobile users — they can tap instead of type
+# ── QUICK BUTTONS ─────────────────────────────────────────────
 st.markdown("**Quick questions:**")
 col1, col2, col3 = st.columns(3)
 with col1:
     if st.button("🛠 Skills"):
-        st.session_state.quick_question = "What are your technical skills?"
+        st.session_state.quick_q = "What are Aditya's technical skills?"
 with col2:
     if st.button("📁 Projects"):
-        st.session_state.quick_question = "Tell me about your projects"
+        st.session_state.quick_q = "Tell me about all of Aditya's projects in detail"
 with col3:
     if st.button("📞 Contact"):
-        st.session_state.quick_question = "How can I contact you?"
+        st.session_state.quick_q = "How can I contact Aditya?"
 
 col4, col5, col6 = st.columns(3)
 with col4:
     if st.button("💼 Experience"):
-        st.session_state.quick_question = "What is your work experience?"
+        st.session_state.quick_q = "What is Aditya's work experience?"
 with col5:
     if st.button("📄 Research"):
-        st.session_state.quick_question = "Do you have any research papers?"
+        st.session_state.quick_q = "Tell me about Aditya's research papers"
 with col6:
     if st.button("🎯 Hire?"):
-        st.session_state.quick_question = "Why should we hire you?"
+        st.session_state.quick_q = "Why should we hire Aditya?"
 
 st.divider()
 
-# ── SESSION STATE — this is Streamlit's version of memory ─────
-# st.session_state persists data between user interactions
-# Without this, every button click resets everything
+# ── LOAD AND INDEX KNOWLEDGE BASE ────────────────────────────
+@st.cache_resource
+def build_knowledge_base():
+    md_files = glob.glob("data/*.md")
+    if not md_files:
+        st.error("No markdown files found in data/ folder!")
+        st.stop()
 
-if "messages" not in st.session_state:
-    # First time loading — start with system prompt + greeting
-    st.session_state.messages = [
-        {"role": "system", "content": SYSTEM_PROMPT}
-    ]
-    # Get opening greeting from AI
-    opening = client.chat.completions.create(
-        model="llama-3.1-8b-instant",   # Groq's free llama3 model
-        messages=st.session_state.messages + [
-            {"role": "user", "content": "Introduce yourself in 2 friendly lines"}
-        ]
+    all_docs = []
+    for file_path in md_files:
+        loader = TextLoader(file_path, encoding="utf-8")
+        docs = loader.load()
+        for doc in docs:
+            doc.metadata["source_file"] = os.path.basename(file_path)
+        all_docs.extend(docs)
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,   # bigger chunks = more context per chunk
+        chunk_overlap=100  # more overlap = less context lost at boundaries
     )
-    greeting = opening.choices[0].message.content
-    st.session_state.messages.append({
-        "role": "assistant",
-        "content": greeting
+    chunks = splitter.split_documents(all_docs)
+
+    embeddings = MistralAIEmbeddings(
+        api_key=os.getenv("MISTRAL_API_KEY"),
+        model="mistral-embed"
+    )
+
+    vectorstore = Chroma.from_documents(
+        documents=chunks,
+        embedding=embeddings,
+        persist_directory="./portfolio_db"
+    )
+
+    # k=10 so all 5 projects + other info can be retrieved
+    return vectorstore.as_retriever(search_kwargs={"k": 10})
+
+
+def load_rules():
+    try:
+        with open("data/rules.md", "r", encoding="utf-8") as f:
+            return f.read()
+    except:
+        return "Be professional, helpful, and only answer about Aditya."
+
+
+# ── TELEGRAM NOTIFICATION ─────────────────────────────────────
+import requests
+
+def send_telegram_alert(user_message):
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    
+    text = f"""
+🚨 *HIRING ALERT — Portfolio Chatbot*
+
+A recruiter just showed hiring interest!
+
+💬 *Their message:*
+_{user_message}_
+
+⏰ Check your portfolio chatbot now and follow up!
+    """
+    
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    requests.post(url, json={
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "Markdown"
     })
 
+
+# Only show these repos
+SHOW_REPOS = [
+    "Portfolio_Chatbot",
+    "PDF_Chatbot", 
+    "Research_Agent",
+    "Ai_Projects"
+]
+
+def fetch_github_projects():
+    try:
+        g = Github(os.getenv("GITHUB_TOKEN"))
+        user = g.get_user(os.getenv("GITHUB_USERNAME"))
+        repos = user.get_repos()
+        
+        projects = []
+        for repo in repos:
+            if repo.name in SHOW_REPOS:  # only whitelisted repos
+                projects.append({
+                    "name": repo.name,
+                    "description": repo.description or "No description",
+                    "url": repo.html_url,
+                    "stars": repo.stargazers_count,
+                    "language": repo.language or "Not specified",
+                    "updated": repo.updated_at.strftime("%B %Y")
+                })
+        return projects
+    except Exception as e:
+        return []
+
+# ── HIRING INTENT DETECTION ───────────────────────────────────
+HIRING_KEYWORDS = [
+    "hire", "hiring", "interview", "opportunity", "opening",
+    "position", "job offer", "would you be interested",
+    "good fit", "schedule a call", "send resume", "connect",
+    "reach out", "notice period", "join our team", "onboard"
+]
+
+def detect_hiring_intent(message):
+    return any(kw in message.lower() for kw in HIRING_KEYWORDS)
+
+
+# ── SMART QUERY ───────────────────────────────────────────────
+SHORT_REPLY_STARTERS = [
+    "yes", "ye", "ok", "okay", "sure", "yep", "yeah",
+    "show me", "tell me more", "go on", "continue",
+    "please", "do it", "more", "and", "what about",
+    "how about", "expand", "elaborate", "give me", "all"
+]
+
+def is_followup(text):
+    text = text.strip().lower()
+    # Only treat as follow-up if it STARTS WITH a trigger word
+    # Remove the is_short check — it causes topic names like 
+    # "urban library" to be treated as follow-ups
+    starts_with_trigger = any(text.startswith(t) for t in SHORT_REPLY_STARTERS)
+    return starts_with_trigger
+
+def get_smart_query(user_input):
+    """
+    If user sends a follow-up like 'yes', 'yes show me all',
+    reuse the last real question for retrieval.
+    This guarantees the right chunks are fetched every time.
+    """
+    if is_followup(user_input):
+        last_q = st.session_state.get("last_question", "")
+        if last_q:
+            return last_q
+    return user_input
+
+
+def save_last_question(user_input):
+    """Save question only if it's a real question, not a follow-up."""
+    if not is_followup(user_input):
+        st.session_state.last_question = user_input
+
+
+# ── BUILD RAG CHAIN ───────────────────────────────────────────
+@st.cache_resource
+def build_chain():
+    retriever = build_knowledge_base()
+    rules = load_rules()
+
+    llm = ChatMistralAI(
+        api_key=os.getenv("MISTRAL_API_KEY"),
+        model="mistral-small-latest",
+        temperature=0
+    )
+
+    prompt = PromptTemplate.from_template("""
+{rules}
+
+---
+
+ABSOLUTE RULE — NO HALLUCINATION:
+You must ONLY use information explicitly written in the
+Knowledge Base Context below.
+
+NEVER use your own training knowledge to fill gaps.
+NEVER invent paper titles, project names, or any details.
+NEVER say something is true if it is not in the context.
+
+IMPORTANT: The context contains Aditya's education, experience,
+skills, projects and research. Read it carefully before saying
+information is missing. If it IS in the context, always answer
+fully and completely.
+
+If information is truly missing from context — say:
+"I don't have that specific detail. You can reach Aditya
+directly at agarwal.aditya2017@gmail.com for more info."
+
+Knowledge Base Context:
+{context}
+
+Conversation History:
+{history}
+
+Current Question: {question}
+
+MEMORY RULE: If the question is a short follow-up like "yes",
+"show me all", "tell me more" — expand on the LAST topic from
+Conversation History. Do NOT reset or change topics.
+
+Answer:""")
+
+    def format_docs(docs):
+        return "\n\n".join([
+            f"[From {doc.metadata.get('source_file', 'unknown')}]\n{doc.page_content}"
+            for doc in docs
+        ])
+
+    # Chain takes a dict:
+    # smart_query → retriever (finds right chunks)
+    # question    → prompt (shows what user actually asked)
+    chain = (
+        {
+            "context": (lambda x: x["smart_query"]) | retriever | format_docs,
+            "question": lambda x: x["question"],
+            "rules": lambda x: rules,
+            "history": lambda x: st.session_state.get("history_text", "")
+        }
+        | prompt
+        | llm
+        | StrOutputParser()
+    )
+
+    return chain, retriever
+
+
+# ── SESSION STATE ─────────────────────────────────────────────
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "history_text" not in st.session_state:
+    st.session_state.history_text = ""
+if "hiring_detected" not in st.session_state:
+    st.session_state.hiring_detected = False
+if "last_question" not in st.session_state:
+    st.session_state.last_question = ""  # stores last real question for memory
+
+# ── BUILD CHAIN ───────────────────────────────────────────────
+with st.spinner("Loading knowledge base..."):
+    chain, retriever = build_chain()
+
 # ── DISPLAY CHAT HISTORY ──────────────────────────────────────
-# Loop through all messages and display them
-# Skip the system prompt (index 0) — user should not see it
-for msg in st.session_state.messages[1:]:
+for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
 
-# ── HANDLE QUICK QUESTION BUTTONS ────────────────────────────
-if "quick_question" in st.session_state:
-    user_input = st.session_state.quick_question
-    del st.session_state.quick_question  # clear it after use
+# ── HANDLE QUICK BUTTONS ──────────────────────────────────────
+if "quick_q" in st.session_state:
+    user_input = st.session_state.quick_q
+    del st.session_state.quick_q
 
-    # Add to chat and get response
     st.session_state.messages.append({"role": "user", "content": user_input})
     with st.chat_message("user"):
         st.write(user_input)
 
     with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
-            response = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=st.session_state.messages
-            )
-            reply = response.choices[0].message.content
+        with st.spinner("Searching knowledge base..."):
+            if detect_hiring_intent(user_input):
+                st.session_state.hiring_detected = True
+
+            save_last_question(user_input)
+            smart_query = get_smart_query(user_input)
+
+            reply = chain.invoke({
+                "question": user_input,
+                "smart_query": smart_query
+            })
             st.write(reply)
 
     st.session_state.messages.append({"role": "assistant", "content": reply})
+    st.session_state.history_text += f"\nUser: {user_input}\nAssistant: {reply}\n"
     st.rerun()
 
-# ── CHAT INPUT BOX ────────────────────────────────────────────
-# st.chat_input creates the message box at the bottom of the page
-user_input = st.chat_input(f"Ask me anything about {name}...")
+# ── CHAT INPUT ────────────────────────────────────────────────
+user_input = st.chat_input("Ask me anything about Aditya...")
 
 if user_input:
-    # Show user message
     st.session_state.messages.append({"role": "user", "content": user_input})
     with st.chat_message("user"):
         st.write(user_input)
 
-    # Get AI response from Groq
     with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
-            response = client.chat.completions.create(
-                model="llama-3.1-8b-instant",   # free Groq model
-                messages=st.session_state.messages
-            )
-            reply = response.choices[0].message.content
+        with st.spinner("Searching knowledge base..."):
+            if detect_hiring_intent(user_input):
+             st.session_state.hiring_detected = True
+             send_telegram_alert(user_input)
+
+            save_last_question(user_input)
+            smart_query = get_smart_query(user_input)
+
+            reply = chain.invoke({
+                "question": user_input,
+                "smart_query": smart_query
+            })
             st.write(reply)
 
-    # Save to history
     st.session_state.messages.append({"role": "assistant", "content": reply})
+    st.session_state.history_text += f"\nUser: {user_input}\nAssistant: {reply}\n"
+
+# ── HIRING ALERT ──────────────────────────────────────────────
+if st.session_state.hiring_detected:
+    st.markdown("""
+    <style>
+        .hiring-alert-banner {
+            margin-top: 12px;
+            margin-bottom: 10px;
+            padding: 18px 20px;
+            border-radius: 14px;
+            border: 1px solid rgba(34, 197, 94, 0.5);
+            background: linear-gradient(135deg, rgba(6, 78, 59, 0.95), rgba(21, 128, 61, 0.95));
+            box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.25), 0 10px 30px rgba(16, 185, 129, 0.35);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .hiring-alert-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: #22c55e;
+            box-shadow: 0 0 0 rgba(34, 197, 94, 0.8);
+            animation: hiringPulse 1.4s infinite;
+            flex-shrink: 0;
+        }
+        .hiring-alert-text {
+            color: #ecfdf5;
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: 0.2px;
+            margin: 0;
+        }
+        @keyframes hiringPulse {
+            0% {
+                transform: scale(0.9);
+                box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.75);
+            }
+            70% {
+                transform: scale(1.08);
+                box-shadow: 0 0 0 12px rgba(34, 197, 94, 0);
+            }
+            100% {
+                transform: scale(0.9);
+                box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+            }
+        }
+    </style>
+    <div class="hiring-alert-banner">
+        <span class="hiring-alert-dot"></span>
+        <p class="hiring-alert-text">🚨 Recruiter Alert Sent! Aditya has been notified via Telegram</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ── SIDEBAR ───────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown("### 🚀 Live GitHub Projects")
+    projects = fetch_github_projects()
+    if projects:
+        st.markdown("""
+        <style>
+            .repo-card {
+                background: linear-gradient(145deg, #121826, #101523);
+                border: 1px solid rgba(148, 163, 184, 0.22);
+                border-radius: 14px;
+                padding: 14px 14px 12px;
+                margin-bottom: 10px;
+                box-shadow: 0 6px 18px rgba(2, 6, 23, 0.35);
+            }
+            .repo-title {
+                margin: 0 0 6px 0;
+                font-size: 15px;
+                line-height: 1.2;
+                font-weight: 700;
+            }
+            .repo-title a {
+                color: #e2e8f0;
+                text-decoration: none;
+            }
+            .repo-title a:hover {
+                color: #22d3ee;
+                text-decoration: underline;
+            }
+            .repo-description {
+                margin: 0 0 10px 0;
+                color: #94a3b8;
+                font-size: 12px;
+                line-height: 1.4;
+            }
+            .repo-meta {
+                display: flex;
+                align-items: center;
+                flex-wrap: wrap;
+                gap: 8px;
+                color: #cbd5e1;
+                font-size: 12px;
+            }
+            .repo-pill {
+                display: inline-flex;
+                align-items: center;
+                padding: 3px 9px;
+                border-radius: 999px;
+                font-size: 11px;
+                font-weight: 600;
+                color: #e2e8f0;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+            }
+        </style>
+        """, unsafe_allow_html=True)
+
+        language_colors = {
+            "python": "#3776ab",
+            "javascript": "#f1e05a",
+            "typescript": "#3178c6",
+            "java": "#b07219",
+            "c++": "#f34b7d",
+            "c": "#555555",
+            "html": "#e34c26",
+            "css": "#563d7c",
+            "go": "#00add8",
+            "shell": "#89e051",
+        }
+
+        for p in projects:
+            safe_name = html.escape(p["name"])
+            safe_url = html.escape(p["url"], quote=True)
+            safe_desc = html.escape(p["description"])
+            safe_lang = html.escape(p["language"])
+            safe_updated = html.escape(p["updated"])
+            stars = p["stars"]
+            lang_color = language_colors.get(p["language"].lower(), "#475569")
+
+            st.markdown(f"""
+            <div class="repo-card">
+                <p class="repo-title">
+                    <a href="{safe_url}" target="_blank"><strong>{safe_name}</strong></a>
+                </p>
+                <p class="repo-description">{safe_desc}</p>
+                <div class="repo-meta">
+                    <span class="repo-pill" style="background:{lang_color}33; border-color:{lang_color}66;">
+                        {safe_lang}
+                    </span>
+                    <span>⭐ {stars}</span>
+                    <span>Updated: {safe_updated}</span>
+                </div>
+            </div>
+            """,unsafe_allow_html=True)
+    else:
+        st.info("Could not fetch GitHub projects")
+
+    st.divider()
+    if st.button("Clear conversation"):
+        st.session_state.messages = []
+        st.session_state.history_text = ""
+        st.session_state.hiring_detected = False
+        st.session_state.last_question = ""
+        st.rerun()
